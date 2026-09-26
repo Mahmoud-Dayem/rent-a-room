@@ -1,0 +1,529 @@
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, EmailStr
+from typing import Optional, List, Dict, Any
+import uvicorn
+from datetime import datetime
+
+app = FastAPI(
+    title="Rent-A-Room API",
+    description="A comprehensive room rental management system",
+    version="1.0.0"
+)
+
+
+# ==================== Pydantic Models ====================
+
+class RoomBase(BaseModel):
+    """Base model for rooms with common fields"""
+    name: str
+    price_per_night: float
+    amenities: List[str] = []
+    description: Optional[str] = None
+    max_guests: int = 1
+
+
+class RoomCreate(RoomBase):
+    """Model for creating new rooms"""
+    pass
+
+
+class RoomUpdate(BaseModel):
+    """Model for updating existing rooms"""
+    name: Optional[str] = None
+    price_per_night: Optional[float] = None
+    amenities: Optional[List[str]] = None
+    description: Optional[str] = None
+    max_guests: Optional[int] = None
+
+
+class RoomInDB(RoomBase):
+    """Model for rooms stored in database"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BookingBase(BaseModel):
+    """Base model for bookings"""
+    room_id: int
+    guest_name: str
+    guest_email: EmailStr
+    check_in_date: datetime
+    check_out_date: datetime
+    special_requests: Optional[str] = None
+
+
+class BookingCreate(BookingBase):
+    """Model for creating new bookings"""
+    pass
+
+
+class BookingUpdate(BaseModel):
+    """Model for updating existing bookings"""
+    guest_name: Optional[str] = None
+    guest_email: Optional[EmailStr] = None
+    special_requests: Optional[str] = None
+
+
+class BookingInDB(BookingBase):
+    """Model for bookings stored in database"""
+    id: int
+    status: str  # 'confirmed', 'cancelled', 'completed'
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ==================== Database Models ====================
+
+class Room(db.Model):
+    """SQLAlchemy model for rooms"""
+    __tablename__ = "rooms"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    price_per_night: Mapped[float] = mapped_column(Float, nullable=False)
+    amenities: Mapped[List[str]] = mapped_column(JSON, default=list)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    max_guests: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Booking(db.Model):
+    """SQLAlchemy model for bookings"""
+    __tablename__ = "bookings"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    room_id: Mapped[int] = mapped_column(Integer, ForeignKey("rooms.id"), nullable=False)
+    guest_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    guest_email: Mapped[EmailStr] = mapped_column(String(255), nullable=False)
+    check_in_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    check_out_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    special_requests: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ==================== Database Session ====================
+
+def get_db() -> Generator[Session, None, None]:
+    """Database session generator"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# ==================== Room Endpoints ====================
+
+@app.get("/rooms", response_model=List[RoomInDB])
+async def get_rooms(
+    skip: int = 0,
+    limit: int = 100,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    amenity: Optional[str] = None
+) -> List[RoomInDB]:
+    """
+    Retrieve a list of rooms with optional filtering
+    
+    Args:
+        skip: Number of records to skip for pagination
+        limit: Maximum number of records to return
+        min_price: Minimum price filter (inclusive)
+        max_price: Maximum price filter (inclusive)
+        amenity: Filter by specific amenity
+        
+    Returns:
+        List of rooms matching the criteria
+    """
+    db = next(get_db())
+    
+    query = db.query(Room).offset(skip).limit(limit)
+    
+    if min_price is not None:
+        query = query.filter(Room.price_per_night >= min_price)
+    
+    if max_price is not None:
+        query = query.filter(Room.price_per_night <= max_price)
+    
+    if amenity:
+        query = query.filter(
+            Room.amenities.contains(amenity)
+        )
+    
+    rooms = query.all()
+    return rooms
+
+
+@app.get("/rooms/{room_id}", response_model=RoomInDB)
+async def get_room(room_id: int) -> RoomInDB:
+    """
+    Retrieve a specific room by ID
+    
+    Args:
+        room_id: The unique identifier of the room
+        
+    Returns:
+        The requested room or raises HTTPException if not found
+    """
+    db = next(get_db())
+    
+    room = db.query(Room).filter(Room.id == room_id).first()
+    
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Room with id {room_id} not found"
+        )
+    
+    return room
+
+
+@app.post("/rooms", response_model=RoomInDB, status_code=status.HTTP_201_CREATED)
+async def create_room(room: RoomCreate) -> RoomInDB:
+    """
+    Create a new room
+    
+    Args:
+        room: The room data to create
+        
+    Returns:
+        The newly created room with generated ID and timestamps
+    """
+    db = next(get_db())
+    
+    db_room = Room(
+        name=room.name,
+        price_per_night=room.price_per_night,
+        amenities=room.amenities or [],
+        description=room.description,
+        max_guests=room.max_guests
+    )
+    
+    db.add(db_room)
+    db.commit()
+    db.refresh(db_room)
+    
+    return db_room
+
+
+@app.put("/rooms/{room_id}", response_model=RoomInDB)
+async def update_room(room_id: int, room: RoomUpdate) -> RoomInDB:
+    """
+    Update an existing room
+    
+    Args:
+        room_id: The unique identifier of the room to update
+        room: The updated room data
+        
+    Returns:
+        The updated room with new values
+    """
+    db = next(get_db())
+    
+    db_room = db.query(Room).filter(Room.id == room_id).first()
+    
+    if not db_room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Room with id {room_id} not found"
+        )
+    
+    # Update only provided fields
+    update_data = room.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_room, field, value)
+    
+    db.commit()
+    db.refresh(db_room)
+    
+    return db_room
+
+
+@app.delete("/rooms/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_room(room_id: int) -> None:
+    """
+    Delete a room
+    
+    Args:
+        room_id: The unique identifier of the room to delete
+        
+    Raises:
+        HTTPException: If room not found or has active bookings
+    """
+    db = next(get_db())
+    
+    room = db.query(Room).filter(Room.id == room_id).first()from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, EmailStr
+from typing import Optional, List, Dict, Any
+import uvicorn
+from datetime import datetime
+
+app = FastAPI(
+    title="Rent-A-Room API",
+    description="A comprehensive room rental management system",
+    version="1.0.0"
+)
+
+
+# ==================== Pydantic Models ====================
+
+class RoomBase(BaseModel):
+    """Base model for rooms with common fields"""
+    name: str
+    price_per_night: float
+    amenities: List[str] = []
+    description: Optional[str] = None
+    max_guests: int = 1
+
+
+class RoomCreate(RoomBase):
+    """Model for creating new rooms"""
+    pass
+
+
+class RoomUpdate(BaseModel):
+    """Model for updating existing rooms"""
+    name: Optional[str] = None
+    price_per_night: Optional[float] = None
+    amenities: Optional[List[str]] = None
+    description: Optional[str] = None
+    max_guests: Optional[int] = None
+
+
+class RoomInDB(RoomBase):
+    """Model for rooms stored in database"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BookingBase(BaseModel):
+    """Base model for bookings"""
+    room_id: int
+    guest_name: str
+    guest_email: EmailStr
+    check_in_date: datetime
+    check_out_date: datetime
+    special_requests: Optional[str] = None
+
+
+class BookingCreate(BookingBase):
+    """Model for creating new bookings"""
+    pass
+
+
+class BookingUpdate(BaseModel):
+    """Model for updating existing bookings"""
+    guest_name: Optional[str] = None
+    guest_email: Optional[EmailStr] = None
+    special_requests: Optional[str] = None
+
+
+class BookingInDB(BookingBase):
+    """Model for bookings stored in database"""
+    id: int
+    status: str  # 'confirmed', 'cancelled', 'completed'
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ==================== Database Models ====================
+
+class Room(db.Model):
+    """SQLAlchemy model for rooms"""
+    __tablename__ = "rooms"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    price_per_night: Mapped[float] = mapped_column(Float, nullable=False)
+    amenities: Mapped[List[str]] = mapped_column(JSON, default=list)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    max_guests: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Booking(db.Model):
+    """SQLAlchemy model for bookings"""
+    __tablename__ = "bookings"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    room_id: Mapped[int] = mapped_column(Integer, ForeignKey("rooms.id"), nullable=False)
+    guest_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    guest_email: Mapped[EmailStr] = mapped_column(String(255), nullable=False)
+    check_in_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    check_out_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    special_requests: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ==================== Database Session ====================
+
+def get_db() -> Generator[Session, None, None]:
+    """Database session generator"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# ==================== Room Endpoints ====================
+
+@app.get("/rooms", response_model=List[RoomInDB])
+async def get_rooms(
+    skip: int = 0,
+    limit: int = 100,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    amenity: Optional[str] = None
+) -> List[RoomInDB]:
+    """
+    Retrieve a list of rooms with optional filtering
+    
+    Args:
+        skip: Number of records to skip for pagination
+        limit: Maximum number of records to return
+        min_price: Minimum price filter (inclusive)
+        max_price: Maximum price filter (inclusive)
+        amenity: Filter by specific amenity
+        
+    Returns:
+        List of rooms matching the criteria
+    """
+    db = next(get_db())
+    
+    query = db.query(Room).offset(skip).limit(limit)
+    
+    if min_price is not None:
+        query = query.filter(Room.price_per_night >= min_price)
+    
+    if max_price is not None:
+        query = query.filter(Room.price_per_night <= max_price)
+    
+    if amenity:
+        query = query.filter(
+            Room.amenities.contains(amenity)
+        )
+    
+    rooms = query.all()
+    return rooms
+
+
+@app.get("/rooms/{room_id}", response_model=RoomInDB)
+async def get_room(room_id: int) -> RoomInDB:
+    """
+    Retrieve a specific room by ID
+    
+    Args:
+        room_id: The unique identifier of the room
+        
+    Returns:
+        The requested room or raises HTTPException if not found
+    """
+    db = next(get_db())
+    
+    room = db.query(Room).filter(Room.id == room_id).first()
+    
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Room with id {room_id} not found"
+        )
+    
+    return room
+
+
+@app.post("/rooms", response_model=RoomInDB, status_code=status.HTTP_201_CREATED)
+async def create_room(room: RoomCreate) -> RoomInDB:
+    """
+    Create a new room
+    
+    Args:
+        room: The room data to create
+        
+    Returns:
+        The newly created room with generated ID and timestamps
+    """
+    db = next(get_db())
+    
+    db_room = Room(
+        name=room.name,
+        price_per_night=room.price_per_night,
+        amenities=room.amenities or [],
+        description=room.description,
+        max_guests=room.max_guests
+    )
+    
+    db.add(db_room)
+    db.commit()
+    db.refresh(db_room)
+    
+    return db_room
+
+
+@app.put("/rooms/{room_id}", response_model=RoomInDB)
+async def update_room(room_id: int, room: RoomUpdate) -> RoomInDB:
+    """
+    Update an existing room
+    
+    Args:
+        room_id: The unique identifier of the room to update
+        room: The updated room data
+        
+    Returns:
+        The updated room with new values
+    """
+    db = next(get_db())
+    
+    db_room = db.query(Room).filter(Room.id == room_id).first()
+    
+    if not db_room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Room with id {room_id} not found"
+        )
+    
+    # Update only provided fields
+    update_data = room.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_room, field, value)
+    
+    db.commit()
+    db.refresh(db_room)
+    
+    return db_room
+
+
+@app.delete("/rooms/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_room(room_id: int) -> None:
+    """
+    Delete a room
+    
+    Args:
+        room_id: The unique identifier of the room to delete
+        
+    Raises:
+        HTTPException: If room not found or has active bookings
+    """
+    db = next(get_db())
+    
+    room = db.query(Room).filter(Room.id == room_id).first()
