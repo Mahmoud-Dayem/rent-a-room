@@ -1,12 +1,21 @@
+from contextlib import asynccontextmanager
 from typing import Annotated, Literal, Optional
 
 from fastapi import Cookie, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
+from database import init_db
 from rooms import rooms
 
-app = FastAPI(title="Rent Room")
+
+@asynccontextmanager
+async def liespan(app: FastAPI):
+    init_db
+    yield
+
+
+app = FastAPI(lifespan=lifespan, title="Rent Room")
 
 
 class PreferenceCookies(BaseModel):
