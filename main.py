@@ -4,14 +4,16 @@ from typing import Annotated, Literal, Optional
 from fastapi import Cookie, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+from sqlmodel import select
 
-from database import init_db
+from database import SessionDep, get_session, init_db
+from model import Room as RoomModel
 from rooms import rooms
 
 
 @asynccontextmanager
-async def liespan(app: FastAPI):
-    init_db
+async def lifespan(app: FastAPI):
+    init_db()
     yield
 
 
@@ -27,18 +29,9 @@ class UserAgent(BaseModel):
     user_agent: str | None = None
 
 
-@app.get("/", status_code=status.HTTP_200_OK)
-async def root(
-    cookies: Annotated[PreferenceCookies, Cookie()],
-    user_agent: Annotated[UserAgent, Header()] = None,
-):
-
-    return {
-        "message": "Welcome to Rent-a-Room!",
-        "themes is ": cookies.theme,
-        "lang is": cookies.lang,
-        "user_agent is ": user_agent,
-    }
+@app.get("/", status_code=status.HTTP_200_OK, response_model=list[RoomModel])
+def root(session: SessionDep):
+    return session.exec(select(RoomModel)).all()
 
 
 # @app.get("/rooms", status_code=status.HTTP_200_OK)
@@ -76,13 +69,21 @@ max_price_query = Query(gt=10, le=10000)
 annotated_max_price = Annotated[float | None, max_price_query]
 
 
-class Room(BaseModel):
-    id: int
-    name: str
-    price_per_night: float
-    bedrooms: int
-    bathrooms: int
-    area: float
+class RoomCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    price_per_night: float = Field(ge=0)
+    bedrooms: int = Field(ge=0)
+    bathroom: int = Field(ge=0)
+    area: float = Field(gt=0)
+
+
+@app.post("/rooms", status_code=status.HTTP_201_CREATED, response_model=RoomModel)
+def create_room(room: RoomCreate, session: SessionDep):
+    db_room = RoomModel.model_validate(room)
+    session.add(db_room)
+    session.commit()
+    session.refresh(db_room)
+    return db_room
 
 
 class RoomQuery(BaseModel):
