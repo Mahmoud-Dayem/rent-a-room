@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 from sqlalchemy.engine import Engine
 from sqlmodel import Field, Session, SQLModel
 
@@ -20,3 +21,15 @@ class Room(SQLModel, table=True):
 
     # Area in square meters (or feet)
     area: float = Field(gt=0.0)  # Greater than 0
+
+
+class RoomCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    price_per_night: float = Field(ge=0)
+    bedrooms: int = Field(ge=0)
+    bathroom: int = Field(ge=0)
+    area: float = Field(gt=0)
+
+
+class RoomUpdate(SQLModel):
+    price_per_night: float = Field(ge=0)
