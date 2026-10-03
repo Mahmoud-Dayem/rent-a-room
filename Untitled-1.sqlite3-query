@@ -1,0 +1,13 @@
+-- database: ./database.db
+
+SELECT
+    users.id AS user_id,
+    users.username AS user_name,
+    bookings.check_in,
+    rooms.id AS room_id
+FROM users
+INNER JOIN bookings
+    ON users.id = bookings.user_id
+INNER JOIN rooms
+    ON bookings.room_id = rooms.id
+WHERE users.id = 1;
