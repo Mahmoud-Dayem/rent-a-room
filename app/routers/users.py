@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException, status
 from pwdlib import PasswordHash
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from app.dependicies.database import SessionDep
+from app.errors import EMAIL_ALREADY_EXIST, USER_ALREADY_EXIST, USER_NOT_FOUND
 from app.models.booking import BookingModel, BookingPublic
 from app.models.user import UserCreate, UserModel, UserPublic
 
@@ -26,19 +28,13 @@ async def create_user(
     )
 
     if username_result.first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Username already exists",
-        )
+        raise USER_ALREADY_EXIST
     email_result = await session.execute(
         select(UserModel).where(UserModel.email == user.email)
     )
 
     if email_result.first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already exists",
-        )
+        raise EMAIL_ALREADY_EXIST
 
     # Hash password
     hashed_password = password_hash.hash(user.password)
@@ -70,15 +66,12 @@ async def get_user(
     user = await session.get(UserModel, user_id)
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+        raise usrenot
 
     return user
 
 
-##############################
+############################## eager loading vs lazy loading
 
 
 @router.get(
@@ -90,17 +83,17 @@ async def get_user_bookings(
     session: SessionDep,
 ):
 
-    user = await session.get(UserModel, user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    result = await session.execute(
-        select(BookingModel).where(BookingModel.user_id == user_id)
+    user = await session.get(
+        UserModel, user_id, options=[selectinload(UserModel.bookings)]
     )
+    if not user:
+        raise USER_NOT_FOUND
 
-    bookings = result.scalars().all()
+    # result = await session.execute(
+    #     select(BookingModel).where(BookingModel.user_id == user_id)
+    # )
+    print(user)
 
-    return bookings
+    return user.bookings
+
+    # return bookings

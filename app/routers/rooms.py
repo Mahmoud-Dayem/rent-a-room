@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import col, select
 
 from app.dependicies.database import SessionDep, get_session, init_db
+from app.errors import ROOM_NOT_FOUND, SERVICE_UNDER_MAINTENANCE
 from app.models.room import RoomCreate, RoomUpdate
 from app.models.room import RoomModel as RoomModel
 
@@ -27,10 +28,7 @@ maintenance_mode = True
 
 def check_maintenance_mode():
     if maintenance_mode is False:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="API is currently unavailable",
-        )
+        raise SERVICE_UNDER_MAINTENANCE
 
     return True
 
@@ -38,9 +36,7 @@ def check_maintenance_mode():
 async def room_available_or_404(session: SessionDep, room_id: RoomID):
     room = await session.get(RoomModel, room_id)
     if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Room not found"
-        )
+        raise ROOM_NOT_FOUND
     return room
 
 
@@ -102,11 +98,21 @@ async def delete_room(
     room: Annotated[RoomModel, Depends(room_available_or_404)],
     room_id: int = RoomID,
 ):
-
-    session.delete(room)
+    await session.delete(room)
     await session.commit()
 
-    return {"message": "Room deleted successfully", "id": room_id}
+    deleted_room = await session.get(RoomModel, room_id)
+
+    if deleted_room:
+        return {
+            "message": "Room was NOT deleted",
+            "id": room_id,
+        }
+
+    return {
+        "message": "Room deleted successfully",
+        "id": room_id,
+    }
 
 
 max_price_query = Query(gt=10, le=10000)

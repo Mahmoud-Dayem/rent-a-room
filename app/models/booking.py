@@ -22,7 +22,7 @@ class BookingModel(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
 
     user_id: int = Field(foreign_key="users.id", index=True)
-    room_id: int = Field(foreign_key="rooms.id", index=True)
+    room_id: int = Field(foreign_key="rooms.id", index=True, ondelete="CASCADE")
     room: "RoomModel" = Relationship(back_populates="bookings")
     user: "UserModel" = Relationship(back_populates="bookings")
     check_in: date
