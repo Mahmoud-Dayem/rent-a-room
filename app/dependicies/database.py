@@ -2,6 +2,7 @@ import asyncio
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlmodel import Session, SQLModel, create_engine
@@ -14,6 +15,11 @@ sqlite_file_name = "database.db"
 sqlite_url = f"sqlite+aiosqlite:///{sqlite_file_name}"
 
 engine = create_async_engine(sqlite_url, echo=True)
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def enable_foreign_keys(dpapi_connection, connection_record):
+    dpapi_connection.execute("PRAGMA foreign_keys=ON")
 
 
 async def init_db():

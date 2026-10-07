@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class UserCreate(SQLModel):
     username: str = Field(min_length=3, max_length=50)
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=16)
 
 
 # Database table
@@ -35,9 +35,13 @@ class UserModel(SQLModel, table=True):
 
 # What client receives
 class UserPublic(SQLModel):
-    id: int
+    # id: int
     username: str
     email: str
-    is_active: bool
-    is_admin: bool
-    created_at: datetime
+    # is_active: bool
+    # is_admin: bool
+    # created_at: datetime
+
+
+class UserUpdate(SQLModel):
+    email: EmailStr | None = None

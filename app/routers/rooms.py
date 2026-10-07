@@ -15,10 +15,11 @@ from fastapi import (
 )
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-from sqlmodel import col, select
+from sqlmodel import SQLModel, col, func, select
 
 from app.dependicies.database import SessionDep, get_session, init_db
 from app.errors import ROOM_NOT_FOUND, SERVICE_UNDER_MAINTENANCE
+from app.models.booking import BookingModel
 from app.models.room import RoomCreate, RoomUpdate
 from app.models.room import RoomModel as RoomModel
 
@@ -34,6 +35,7 @@ def check_maintenance_mode():
 
 
 async def room_available_or_404(session: SessionDep, room_id: RoomID):
+    print(f"****** room id is {room_id}*************************")
     room = await session.get(RoomModel, room_id)
     if not room:
         raise ROOM_NOT_FOUND
@@ -63,6 +65,50 @@ async def get_rooms_faq():
         "pets_allowed": False,
         "wifi_available": True,
     }
+
+
+### get room stats
+
+
+class RoomWithBookingCount(SQLModel):
+    id: int
+    name: str
+    price_per_night: float
+    bedrooms: int
+    bathroom: int
+    area: float
+
+    booking_count: int
+
+
+@router.get(
+    "/stats",
+    status_code=status.HTTP_200_OK,
+    # response_model=list[RoomWithBookingCount],
+)
+async def get_room_stats(session: SessionDep):
+    print("********************************************")
+    statement = (
+        select(RoomModel, func.count(col(BookingModel.id).label("booking_count")))
+        .outerjoin(BookingModel, col(BookingModel.room_id) == RoomModel.id)
+        .group_by(col(RoomModel.id))
+        .order_by(col(RoomModel.id))
+    )
+
+    result = await session.execute(statement)
+    rows = result.all()
+    data = [
+        {
+            **room.model_dump(),
+            "booking_count": booking_count,
+        }
+        for room, booking_count in rows
+    ]
+
+    return data
+
+
+##################################################################################################################
 
 
 @router.get("/{room_id}")
@@ -119,7 +165,7 @@ max_price_query = Query(gt=10, le=10000)
 annotated_max_price = Annotated[float | None, max_price_query]
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=RoomModel)
+@router.post("/", status_code=status.HTTP_200_OK, response_model=RoomModel)
 async def create_room(room: RoomCreate, session: SessionDep):
     validated_room = RoomModel.model_validate(room)
     session.add(validated_room)

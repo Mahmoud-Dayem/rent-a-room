@@ -28,7 +28,7 @@ class RoomModel(SQLModel, table=True):
     # Area in square meters (or feet)
     area: float = Field(gt=0.0)  # Greater than 0
     bookings: list["BookingModel"] = Relationship(
-        back_populates="room", cascade_delete=True
+        back_populates="room", passive_deletes="all"
     )
 
 

@@ -44,12 +44,13 @@ async def create_booking(
     session: SessionDep,
 ):
     room = await session.get(RoomModel, booking.room_id)
+    if not room:
+        raise ROOM_NOT_FOUND
+
     user = await session.get(UserModel, booking.user_id)
 
     if not user:
         raise USER_NOT_FOUND
-    if not room:
-        raise ROOM_NOT_FOUND
 
     nights = (booking.check_out - booking.check_in).days
 
@@ -92,7 +93,7 @@ async def booking_available_or_404(session: SessionDep, booking_id: BookingID):
     "/{booking_id}",
     status_code=status.HTTP_200_OK,
     response_model=BookingWithDetails,
-    tags=["booking"],
+    tags=["bookings details"],
 )
 async def get_booking(
     session: SessionDep,
@@ -102,7 +103,10 @@ async def get_booking(
     booking = await session.get(
         BookingModel,
         booking_id,
-        options=[joinedload(BookingModel.room), joinedload(BookingModel.user)],
+        options=[
+            joinedload(BookingModel.user),
+            joinedload(BookingModel.room),
+        ],
     )
     if not booking:
         raise BOOKING_NOT_FOUND

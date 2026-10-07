@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel
 from sqlmodel import Field, Relationship, SQLModel
@@ -22,8 +22,8 @@ class BookingModel(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
 
     user_id: int = Field(foreign_key="users.id", index=True)
-    room_id: int = Field(foreign_key="rooms.id", index=True, ondelete="CASCADE")
-    room: "RoomModel" = Relationship(back_populates="bookings")
+    room_id: int | None = Field(foreign_key="rooms.id", index=True, ondelete="SET NULL")
+    room: Optional["RoomModel"] = Relationship(back_populates="bookings")
     user: "UserModel" = Relationship(back_populates="bookings")
     check_in: date
     check_out: date
@@ -45,3 +45,4 @@ class BookingBase(SQLModel):
 class BookingPublic(BookingBase):
     id: int
     total_price: float
+    room_id: int | None
