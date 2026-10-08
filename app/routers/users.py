@@ -6,6 +6,8 @@ from pwdlib import PasswordHash
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
+from app.auth import create_access_token, decode_access_token
+from app.config import settings
 from app.dependicies.database import SessionDep
 from app.errors import EMAIL_ALREADY_EXIST, USER_ALREADY_EXIST, USER_NOT_FOUND
 from app.models.booking import BookingModel, BookingPublic
@@ -14,6 +16,14 @@ from app.models.user import UserCreate, UserModel, UserPublic
 router = APIRouter(prefix="/users", tags=["Users"])
 
 password_hash = PasswordHash.recommended()
+
+from app.config import settings
+
+print("*************************")
+
+print(settings.jwt_secret_key)
+print(settings.jwt_algorithm)
+print(settings.jwt_access_token_expire_minutes)
 
 
 # verify new password
@@ -159,8 +169,18 @@ async def login(
             detail="Invalid username or password",
             headers={"www-Authenticate": "Beared"},
         )
-    return {"access_token": "jwt-token", "token_type": "bearer"}
+
+    token = create_access_token({"email": user.email})
+    return {"access_token": "jwt-token", "token_type": "bearer", "token": token}
 
 
 # If correct:
 # create JWT access token here
+
+
+# token = create_access_token({"email": "mahmoud@example.com"})
+# token_test = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1haG1vdWRAZXhhbXBsZS5jb20iLCJpYXQiOjE3OTEImV4cCI6MTc5MTQ0NTg5OX0.b2WlgZY1AffjZ7OjJp_frB_Z9C0HWMTrFtd1_Hi-yp0"
+
+# print(f"Token is  {token}")
+# verify_token = decode_access_token(token_test)
+# print(f"verificaiton is {verify_token}")

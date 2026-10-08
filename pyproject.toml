@@ -12,6 +12,8 @@ dependencies = [
     "pwdlib[argon2]>=0.3.1",
     "pydantic>=2.13.4",
     "pydantic-extra-types[phonenumbers]>=2.11.1",
+    "pydantic-settings>=2.14.2",
+    "pyjwt>=2.15.1",
     "sqlmodel>=0.0.39",
 ]
 
