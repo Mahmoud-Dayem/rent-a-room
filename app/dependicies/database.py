@@ -9,7 +9,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.models.booking import BookingModel
 from app.models.room import RoomModel
-from app.models.user import UserModel
+from app.models.user import PasswordResetToken, UserModel
 
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite+aiosqlite:///{sqlite_file_name}"

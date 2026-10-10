@@ -25,6 +25,7 @@ class UserModel(SQLModel, table=True):
     email: EmailStr = Field(index=True, unique=True, max_length=255)
 
     hashed_password: str
+    role: str
 
     is_active: bool = Field(default=True)
     is_admin: bool = Field(default=False)
@@ -45,3 +46,25 @@ class UserPublic(SQLModel):
 
 class UserUpdate(SQLModel):
     email: EmailStr | None = None
+
+
+class PassswordResetRequest(SQLModel):
+    email: EmailStr
+
+
+class PasswordResetToken(SQLModel, table=True):
+    __tablename__ = "password_reset_tokens"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    user_id: int = Field(foreign_key="users.id", index=True)
+
+    # token_hash: str = Field(unique=True, index=True)
+    token: str = Field(unique=True, index=True)
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    expires_at: datetime
+
+    # used_at: datetime | None = Field(default=None)
+    used: bool = Field(default=False)

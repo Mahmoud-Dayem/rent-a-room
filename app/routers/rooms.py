@@ -17,6 +17,13 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlmodel import SQLModel, col, func, select
 
+from app.auth import (
+    CurrentUser,
+    admin_required,
+    get_current_user,
+    oauth2_scheme,
+    user_required,
+)
 from app.dependicies.database import SessionDep, get_session, init_db
 from app.errors import ROOM_NOT_FOUND, SERVICE_UNDER_MAINTENANCE
 from app.models.booking import BookingModel
@@ -141,9 +148,18 @@ async def update_room(
 @router.delete("/{room_id}")
 async def delete_room(
     session: SessionDep,
+    user: admin_required,
     room: Annotated[RoomModel, Depends(room_available_or_404)],
     room_id: int = RoomID,
 ):
+    print("&&" * 25)
+    print(user)
+    INVALID_AUTHORIZATION = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="NOT AUTHORIZED"
+    )
+    if not user.is_admin:
+        raise INVALID_AUTHORIZATION
+
     await session.delete(room)
     await session.commit()
 
@@ -155,10 +171,7 @@ async def delete_room(
             "id": room_id,
         }
 
-    return {
-        "message": "Room deleted successfully",
-        "id": room_id,
-    }
+    return {"message": "Room deleted successfully", "id": room_id}
 
 
 max_price_query = Query(gt=10, le=10000)

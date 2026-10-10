@@ -6,7 +6,7 @@ from pwdlib import PasswordHash
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from app.auth import create_access_token, decode_access_token
+from app.auth import create_access_token, decode_token
 from app.config import settings
 from app.dependicies.database import SessionDep
 from app.errors import EMAIL_ALREADY_EXIST, USER_ALREADY_EXIST, USER_NOT_FOUND
