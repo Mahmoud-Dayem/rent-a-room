@@ -17,7 +17,14 @@ TokenType = Literal["access_token", "refresh_token"]
 INVALID_TOKEN = HTTPException(
     detail="UNAUTHORIZED", status_code=status.HTTP_401_UNAUTHORIZED
 )
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="login",
+    scopes={
+        "read:users": "Read users",
+        "write:users": "Create and  update users",
+        "delete:users": "delete users",
+    },
+)
 
 
 async def get_current_user(
